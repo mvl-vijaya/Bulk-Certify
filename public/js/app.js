@@ -160,10 +160,24 @@ class BulkCertifyApp {
       }
     });
 
+    // Click on dropzone or browse link to open file dialog
+    dropzone?.addEventListener('click', (e) => {
+      if (e.target !== fileInput) {
+        fileInput?.click();
+      }
+    });
+
+    fileInput?.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
     // File input change
     fileInput?.addEventListener('change', (e) => {
       const file = e.target.files[0];
-      if (file) this.templateUploader.handleFile(file);
+      if (file) {
+        this.templateUploader.handleFile(file);
+        fileInput.value = '';
+      }
     });
 
     // Drag and drop events
@@ -256,9 +270,23 @@ class BulkCertifyApp {
       }
     };
 
+    // Click on dropzone or browse link to open file dialog
+    dropzone?.addEventListener('click', (e) => {
+      if (e.target !== fileInput) {
+        fileInput?.click();
+      }
+    });
+
+    fileInput?.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
     fileInput?.addEventListener('change', (e) => {
       const file = e.target.files[0];
-      if (file) handleDataFile(file);
+      if (file) {
+        handleDataFile(file);
+        fileInput.value = '';
+      }
     });
 
     ['dragenter', 'dragover'].forEach(name => {
