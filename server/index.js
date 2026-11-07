@@ -84,5 +84,10 @@ function startServer(port) {
   });
 }
 
-startServer(config.port);
+// Start Express HTTP Server when run directly
+if (!process.env.VERCEL) {
+  startServer(config.port);
+}
+
+export default app;
 
