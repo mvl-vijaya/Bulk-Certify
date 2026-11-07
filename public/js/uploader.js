@@ -19,10 +19,11 @@ export class TemplateUploader {
     if (!file) return;
 
     this.currentFile = file;
-    const mime = file.type || '';
+    const mime = (file.type || '').toLowerCase();
+    const nameLower = (file.name || '').toLowerCase();
 
     try {
-      if (mime === 'application/pdf' || file.name.endsWith('.pdf')) {
+      if (mime === 'application/pdf' || nameLower.endsWith('.pdf')) {
         this.isPdf = true;
         const renderedDataUrl = await this.renderPdfPageToImage(file);
         this.currentDataUrl = renderedDataUrl;
@@ -32,7 +33,7 @@ export class TemplateUploader {
           isPdf: true,
           name: file.name
         });
-      } else if (file.type.startsWith('image/') || file.name.match(/\.(png|jpe?g|svg)$/i)) {
+      } else if (mime.startsWith('image/') || /\.(png|jpe?g|svg|webp|bmp)$/i.test(nameLower)) {
         this.isPdf = false;
         const dataUrl = await this.readFileAsDataUrl(file);
         this.currentDataUrl = dataUrl;

@@ -160,18 +160,7 @@ class BulkCertifyApp {
       }
     });
 
-    // Click on dropzone or browse link to open file dialog
-    dropzone?.addEventListener('click', (e) => {
-      if (e.target !== fileInput) {
-        fileInput?.click();
-      }
-    });
-
-    fileInput?.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-
-    // File input change
+    // File input change (triggered natively by <label for="templateFileInput">)
     fileInput?.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
@@ -270,17 +259,7 @@ class BulkCertifyApp {
       }
     };
 
-    // Click on dropzone or browse link to open file dialog
-    dropzone?.addEventListener('click', (e) => {
-      if (e.target !== fileInput) {
-        fileInput?.click();
-      }
-    });
-
-    fileInput?.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-
+    // File input change (triggered natively by <label for="dataFileInput">)
     fileInput?.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
