@@ -20,8 +20,16 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static frontend assets
-app.use(express.static(path.join(projectRoot, 'public')));
+// Serve static frontend assets (disabled caching to ensure instant live updates)
+app.use(express.static(path.join(projectRoot, 'public'), {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 // Mount API endpoints
 app.use('/api', analyzeRouter);
