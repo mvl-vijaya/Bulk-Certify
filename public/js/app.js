@@ -215,37 +215,123 @@ class BulkCertifyApp {
     const fileInput = document.getElementById('dataFileInput');
     const loadSampleDataBtn = document.getElementById('loadSampleDataBtn');
 
+    // High-speed client-side spreadsheet parser using SheetJS (runs 100% in-browser)
+    const parseClientSide = async (file) => {
+      if (!window.XLSX) return null;
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) throw new Error('Spreadsheet has no readable sheets.');
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rawRows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      if (!rawRows || rawRows.length === 0) throw new Error('Spreadsheet appears to be empty.');
+
+      const rawHeaders = rawRows[0] || [];
+      const headers = rawHeaders
+        .map((h, idx) => (h ? String(h).trim() : `Column_${idx + 1}`))
+        .filter(Boolean);
+
+      if (headers.length === 0) throw new Error('No valid column headers found.');
+
+      const allRows = [];
+      for (let i = 1; i < rawRows.length; i++) {
+        const rowArray = rawRows[i];
+        const hasData = rowArray && rowArray.some(val => val !== null && val !== undefined && String(val).trim() !== '');
+        if (!hasData) continue;
+
+        const rowObj = {};
+        headers.forEach((header, colIndex) => {
+          const val = rowArray[colIndex];
+          rowObj[header] = val !== undefined && val !== null ? String(val).trim() : '';
+        });
+        allRows.push(rowObj);
+      }
+
+      if (allRows.length === 0) throw new Error('No student data rows found below the header row.');
+
+      // Intelligent column heuristic detection
+      const nameKeywords = ['student name', 'student_name', 'name', 'full name', 'fullname', 'candidate', 'recipient', 'participant'];
+      const rollKeywords = ['roll no', 'roll_no', 'roll number', 'roll', 'registration no', 'reg no', 'reg_no', 'student id', 'id', 'enrollment'];
+
+      let nameColumn = headers[0];
+      let rollNumberColumn = headers[1] || headers[0];
+      const lowerHeaders = headers.map(h => h.toLowerCase().trim());
+
+      for (const kw of nameKeywords) {
+        const idx = lowerHeaders.findIndex(h => h === kw || h.includes(kw));
+        if (idx !== -1) { nameColumn = headers[idx]; break; }
+      }
+      for (const kw of rollKeywords) {
+        const idx = lowerHeaders.findIndex(h => h === kw || h.includes(kw));
+        if (idx !== -1 && headers[idx] !== nameColumn) { rollNumberColumn = headers[idx]; break; }
+      }
+
+      return {
+        headers,
+        totalRows: allRows.length,
+        previewRows: allRows.slice(0, 10),
+        allRows,
+        suggestedMapping: { nameColumn, rollNumberColumn }
+      };
+    };
+
     const handleDataFile = async (file) => {
       if (!file) return;
 
-      const formData = new FormData();
-      formData.append('dataFile', file);
+      this.showToast('Processing spreadsheet data...', 'info');
 
       try {
-        this.showToast('Parsing spreadsheet data...', 'info');
-        const res = await fetch('/api/parse-data', {
-          method: 'POST',
-          body: formData
-        });
+        let parsedData = null;
 
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Failed to parse spreadsheet.');
+        // 1. Try instant client-side parsing first (fastest, offline-resilient, zero server overhead)
+        try {
+          parsedData = await parseClientSide(file);
+        } catch (clientErr) {
+          console.warn('Client-side parsing fallback to API:', clientErr);
+        }
+
+        // 2. If client-side was unavailable, fallback to backend API
+        if (!parsedData) {
+          const formData = new FormData();
+          formData.append('dataFile', file);
+
+          const res = await fetch('/api/parse-data', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!res.ok) {
+            const errorText = await res.text();
+            let errorMsg = `Server error (${res.status})`;
+            try {
+              const json = JSON.parse(errorText);
+              errorMsg = json.error || errorMsg;
+            } catch {
+              errorMsg = errorText.slice(0, 100) || errorMsg;
+            }
+            throw new Error(errorMsg);
+          }
+
+          parsedData = await res.json();
+          if (!parsedData.success) throw new Error(parsedData.error || 'Failed to parse spreadsheet.');
+        }
 
         this.spreadsheetData = {
           file,
-          headers: data.headers,
-          rows: data.allRows,
-          nameColumn: data.suggestedMapping.nameColumn,
-          rollNumberColumn: data.suggestedMapping.rollNumberColumn,
-          totalRows: data.totalRows
+          headers: parsedData.headers,
+          rows: parsedData.allRows,
+          nameColumn: parsedData.suggestedMapping.nameColumn,
+          rollNumberColumn: parsedData.suggestedMapping.rollNumberColumn,
+          totalRows: parsedData.totalRows
         };
 
-        this.renderSpreadsheetPreview(data);
-        this.populateColumnSelectors(data.headers, data.suggestedMapping);
+        this.renderSpreadsheetPreview(parsedData);
+        this.populateColumnSelectors(parsedData.headers, parsedData.suggestedMapping);
 
         // Update sample text in canvas editor with real 1st row data
-        if (data.allRows.length > 0) {
-          const first = data.allRows[0];
+        if (parsedData.allRows.length > 0) {
+          const first = parsedData.allRows[0];
           if (this.canvasEditor) {
             this.canvasEditor.fields.nameField.sampleText = first[this.spreadsheetData.nameColumn] || 'Alexander Montgomery';
             this.canvasEditor.fields.rollNumberField.sampleText = first[this.spreadsheetData.rollNumberColumn] || 'CS-2026-101';
@@ -253,7 +339,7 @@ class BulkCertifyApp {
           }
         }
 
-        this.showToast(`Loaded ${data.totalRows} student records successfully!`, 'success');
+        this.showToast(`Loaded ${parsedData.totalRows} student records successfully!`, 'success');
       } catch (err) {
         this.showToast(err.message, 'error');
       }
@@ -541,6 +627,18 @@ class BulkCertifyApp {
         body: JSON.stringify(payload)
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMsg = `Server error (${res.status})`;
+        try {
+          const json = JSON.parse(errorText);
+          errorMsg = json.error || errorMsg;
+        } catch {
+          errorMsg = errorText.slice(0, 100) || errorMsg;
+        }
+        throw new Error(errorMsg);
+      }
+
       const data = await res.json();
       if (!data.success && !data.fields) {
         throw new Error(data.error || 'Gemini Vision detection failed.');
@@ -591,8 +689,15 @@ class BulkCertifyApp {
       });
 
       if (!res.ok) {
-        const errorJson = await res.json();
-        throw new Error(errorJson.error || 'Failed to generate preview PDF.');
+        const errorText = await res.text();
+        let errorMsg = `Failed to generate preview (${res.status})`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.error || errorMsg;
+        } catch {
+          errorMsg = errorText.slice(0, 100) || errorMsg;
+        }
+        throw new Error(errorMsg);
       }
 
       const pdfBlob = await res.blob();
@@ -673,8 +778,15 @@ class BulkCertifyApp {
       clearInterval(interval);
 
       if (!res.ok) {
-        const errorJson = await res.json();
-        throw new Error(errorJson.error || 'Batch generation failed.');
+        const errorText = await res.text();
+        let errorMsg = `Batch generation failed (${res.status})`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.error || errorMsg;
+        } catch {
+          errorMsg = errorText.slice(0, 100) || errorMsg;
+        }
+        throw new Error(errorMsg);
       }
 
       if (progressBar) progressBar.style.width = '100%';

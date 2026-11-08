@@ -31,24 +31,30 @@ app.use(express.static(path.join(projectRoot, 'public'), {
   }
 }));
 
-// Mount API endpoints
-app.use('/api', analyzeRouter);
-app.use('/api', parseDataRouter);
-app.use('/api', previewRouter);
-app.use('/api', generateRouter);
+// Mount API endpoints on both /api and root (guarantees 100% Vercel & Express serverless compatibility)
+const apiRouters = [analyzeRouter, parseDataRouter, previewRouter, generateRouter];
+apiRouters.forEach(r => {
+  app.use('/api', r);
+  app.use(r);
+});
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+const healthCheck = (req, res) => {
   res.json({
     status: 'ok',
     app: 'Bulk Certify',
     version: '1.0.0',
     geminiKeyConfigured: Boolean(config.defaultGeminiApiKey)
   });
-});
+};
+app.get('/api/health', healthCheck);
+app.get('/health', healthCheck);
 
-// Fallback to index.html for SPA routing
-app.get('*', (req, res) => {
+// Fallback to index.html for SPA routing (only if not an API request)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ success: false, error: 'API endpoint not found' });
+  }
   res.sendFile(path.join(projectRoot, 'public', 'index.html'));
 });
 
